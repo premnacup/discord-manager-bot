@@ -1,11 +1,9 @@
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 import asyncio 
 import zipfile
 import os
 import datetime
-import motor.motor_asyncio 
-import validation
 
 class Backup(commands.Cog):
     def __init__(self, bot):
@@ -14,20 +12,26 @@ class Backup(commands.Cog):
         self.mongo_uri = os.getenv("MONGO_URI")
         self.db_name = os.getenv("MAIN_DB")
 
-    @commands.hybrid_command(name="backup", help="Backup the database (Async).")
-    @validation.role()
-    async def backup(self, ctx):
+    async def cog_load(self):
+        if self.bot.instance == "server":
+            self.backup_task.start()
+        else:
+            self.backup_task.cancel()
+
+    async def cog_unload(self):
+        self.backup_task.cancel()
+
+    @tasks.loop(hours=16)
+    async def backup_task(self):
         backup_channel_id = os.getenv("BACKUP_CHANNEL_ID")
         if not backup_channel_id:
-             await ctx.send("❌ BACKUP_CHANNEL_ID is not set.")
+             print("❌ BACKUP_CHANNEL_ID is not set.")
              return
 
         channel = self.bot.get_channel(int(backup_channel_id))
         if not channel:
-            await ctx.send("❌ Channel not found.")
+            print("❌ Backup channel not found.")
             return
-
-        await ctx.send("⏳ Starting Async Backup... (Bot will remain responsive)")
 
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         zip_filename = f"db_backup_{timestamp}.zip"
@@ -38,7 +42,7 @@ class Backup(commands.Cog):
             collections = await self.db.list_collection_names()
 
             if not collections:
-                await ctx.send("❌ No collections found.")
+                print("❌ No collections found.")
                 return
             
             for col in collections:
@@ -70,7 +74,7 @@ class Backup(commands.Cog):
 
             if os.path.exists(zip_filename):
                 file_size = os.path.getsize(zip_filename) / (1024 * 1024)
-                limit = ctx.guild.filesize_limit if ctx.guild else 8 * 1024 * 1024
+                limit = channel.guild.filesize_limit if channel.guild else 8 * 1024 * 1024
 
                 if file_size > (limit / (1024*1024)):
                     await channel.send(f"⚠️ Backup too large ({file_size:.2f}MB).")
@@ -80,12 +84,11 @@ class Backup(commands.Cog):
                         f"📦 **Async Backup** for `{self.db_name}`\nCollections: {len(generated_files)}", 
                         file=file
                     )
-                    await ctx.send("✅ Done!")
             else:
-                await ctx.send("❌ Zip file creation failed.")
+                print("❌ Zip file creation failed.")
 
         except Exception as e:
-            await ctx.send(f"❌ Error: {e}")
+            await channel.send(f"❌ Backup Error: {e}")
             print(f"Backup Error: {e}")
 
         finally:
@@ -95,6 +98,10 @@ class Backup(commands.Cog):
             for f in generated_files:
                 if os.path.exists(f):
                     os.remove(f)
+
+    @backup_task.before_loop
+    async def before_backup_task(self):
+        await self.bot.wait_until_ready()
 
 async def setup(bot):
     await bot.add_cog(Backup(bot))
