@@ -3,7 +3,7 @@ import asyncio
 import discord
 from discord.ext import commands
 import validation
-DELAY_SEC = 0.6
+DELAY_SEC = 0.2
 
 
 class Randomizer(commands.Cog):
@@ -42,15 +42,9 @@ class Randomizer(commands.Cog):
         aliases=["asr", "asrand", "assr"],
         help="Add a restaurant to the randomizer list. \n **arand** for standard or **asrand** for special.",
     )
+    @validation.role()
     async def add_rand(self, ctx: commands.Context, *args):
         """Add a restaurant to the randomizer list (standard or special)."""
-        if not self.role_validate(ctx.author.roles):
-            return await self.send_embed(
-                ctx,
-                "Permission Denied",
-                "❌ You need to be a Moderator to use this command.",
-                discord.Color.red(),
-            )
 
         name = " ".join(args).strip()
         if not name:
