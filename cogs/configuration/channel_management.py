@@ -10,11 +10,11 @@ def create_embed(title: str, description: str, color: discord.Color) -> discord.
     """Creates a standardized Discord embed."""
     return discord.Embed(title=title, description=description, color=color)
 
-def get_channel_entry_index(allowed_channels: List[Dict[str, Any]], channel_id: int) -> Optional[int]:
+def get_channel_entry_index(allowed_channels: List[Dict[str, Any]], channel_id: str) -> Optional[int]:
     """Finds the index of a channel entry in the allowed_channels list."""
     try:
         return next(
-            (i for i, ch in enumerate(allowed_channels) if ch.get("channel_id") == channel_id)
+            (i for i, ch in enumerate(allowed_channels) if ch.get("channel_id") == str(channel_id))
         )
     except StopIteration:
         return None
@@ -35,7 +35,7 @@ class ChannelManagement(commands.Cog):
             print(f"❌ ChannelManagement Cog connection failed: {e!r}")
 
     async def _get_guild_config(self, guild_id: int) -> Dict[str, Any]:
-        doc = await self.collection.find_one({"_id": guild_id})
+        doc = await self.collection.find_one({"_id": str(guild_id)})
         return doc if doc is not None else {}
 
     async def _check_guild_context(self, ctx: commands.Context) -> Optional[discord.Guild]:
@@ -98,7 +98,7 @@ class ChannelManagement(commands.Cog):
                 }
                 
                 await self.collection.update_one(
-                    {"_id": guild.id},
+                    {"_id": str(guild.id)},
                     {"$set": update_fields},
                     upsert=True,
                 )
@@ -114,7 +114,7 @@ class ChannelManagement(commands.Cog):
                 )
             else:
                 await self.collection.update_one(
-                    {"_id": guild.id},
+                    {"_id": str(guild.id)},
                     {"$set": {"allowed_channels": allowed_channels}},
                     upsert=True,
                 )
@@ -140,8 +140,73 @@ class ChannelManagement(commands.Cog):
             )
             await ctx.send(embed=embed)
 
-    # --- setbotchannel command ---
+    # # --- allcommandsallowed command ---
+    # @validation.role()
+    # @commands.hybrid_command(
+    #     name="allchannelallowed",
+    #     description="Set the bot to allow commands in all channels (disable restrictions).",
+    #     help="Allow bot commands in all channels."
+    # )
+    # async def all_channel_allowed(self, ctx: commands.Context , name  = None):
+    #     guild = await self._check_guild_context(ctx)
+    #     if guild is None:
+    #         return
+    #     if name is None:
+    #         await ctx.send("❌ Please provide a name for the configuration.")
+    #         return
+        
+    #     config = await self._get_guild_config(guild.id)
+        
+    #     if config.get("mode", "all") == "all":
+    #         await ctx.send("📢 Bot commands are already allowed in **all channels**.")
+    #         return
+    #     all_channels = []
+    #     cmd = self.bot.get_command(name)
+    #     if cmd is None:
+    #         await ctx.send(f"❌ Command `{name}` not found.")
+    #         return
+    #     for channel in ctx.guild.text_channels:
+    #         channel_config = next((
+    #             (ch for ch in config.get("allowed_channels", []) if ch.get("channel_id") == channel.id)
+    #         ), None)
+    #         if channel_config and channel_config.get("cmd_mode") == "all" :
+    #             continue
+    #         all_channels.append({
+    #             "channel_id": channel.id,
+    #             "cmd_mode": "only",
+    #             "allowed_commands": [
+    #                 cmd.qualified_name,
+    #                 *cmd.aliases
+    #             ],
+    #         })
+    #         for thread in channel.threads:
+    #             all_channels.append({
+    #                 "channel_id": thread.id,
+    #                 "cmd_mode": "only",
+    #                 "allowed_commands": [
+    #                     cmd.qualified_name,
+    #                     *cmd.aliases
+    #                 ],
+    #             })
+    #     await self.collection.update_one(
+    #         {"_id": str(guild.id)},
+    #                 {
+    #                     "$set": {
+    #                         "mode": "whitelist",
+    #                     },
+    #                     "$addToSet": {
+    #                         "allowed_channels": {
+    #                             "$each": all_channels
+    #                         }
+    #                     }
+    #                 },
+    #                 upsert=True,
+    #         )
+    #     await ctx.send(f"✅ {name} commands are now allowed in **all channels**.")
 
+
+    
+    # --- setbotchannel command ---
     @validation.role()
     @commands.hybrid_command(
         name="setbotchannel", 
@@ -193,10 +258,10 @@ class ChannelManagement(commands.Cog):
         config = await self._get_guild_config(guild.id)
         allowed_channels = config.get("allowed_channels", [])
 
-        idx = get_channel_entry_index(allowed_channels, channel.id)
+        idx = get_channel_entry_index(allowed_channels, str(channel.id))
         
         new_entry = {
-            "channel_id": channel.id,
+            "channel_id": str(channel.id),
             "cmd_mode": cmd_mode,
             "allowed_commands": names if cmd_mode != "all" else []
         }
@@ -216,7 +281,7 @@ class ChannelManagement(commands.Cog):
             title = "✅ Channel enabled"
 
         await self.collection.update_one(
-            {"_id": guild.id},
+            {"_id": str(guild.id)},
             update_data,
             upsert=True,
         )
@@ -255,7 +320,6 @@ class ChannelManagement(commands.Cog):
             return
 
         config = await self._get_guild_config(guild.id)
-        
         if config.get("mode", "all") == "all":
             await ctx.send("📢 Bot commands are allowed in **all** channels (Default Mode).")
             return

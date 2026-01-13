@@ -1,5 +1,5 @@
 from discord.activity import Game
-import os, glob, logging, discord
+import os, glob, logging, discord , random
 import validation
 from discord.ext import commands
 from dotenv import load_dotenv
@@ -86,7 +86,6 @@ class Core(commands.Cog):
         try:
             amount = int(amount)
         except:
-            await ctx.send("❌ Please provide a valid number format.")
             return
         if amount > 10 or amount <= 0:
             await ctx.send("❌ Number out of range (1–10). Showing 10.")
