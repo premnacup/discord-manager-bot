@@ -81,7 +81,7 @@ class Core(commands.Cog):
         await ctx.send(random.choice(responses))
 
     @commands.hybrid_command(name="rick", aliases=["ing"], help="Generate random Ting emoji")
-    async def generateEmoji(self, ctx: commands.Context, amount="1"):
+    async def generateEmoji(self, ctx: commands.Context, * ,amount="1"):
         faces = ["<:ting2:1433595520424742983>", "<:ting:1433593486883684393>"]
         try:
             amount = int(amount)
@@ -126,34 +126,26 @@ class BotInitDB(commands.Bot):
         if not enabled:
             return
         
-        print("🔄 Starting Migration...")
-        db = self.db["schedules"]
+        print("Starting Migration...")
+        db = self.db["restaurant_choices"]
         cursor = db.find({})
         data = await cursor.to_list(length=None)
-        schema = {}
-        for i in data:
-            user_id = i.get("user_id")
-            day =  i.get("day_en","").strip()
-
-            if user_id not in schema:
-                schema[user_id] = {"user_id" : user_id}
-
-            if day not in schema[user_id]:
-                schema[user_id][day] = []
-            new_data = {
-                "name" : i.get("subject"),
-                "room" : i.get("room","Unknown"),
-                "time" : i.get("time"),
-                "professor" : "Unknown"
+        doc = await db.find({}).to_list(length=None)
+        new_docs = []
+        for item in doc:
+            data = {
+                "restaurant" : item.get("restaurant",""),
+                "type" : item.get("type","sr"),
             }
-            schema[user_id][day] += [new_data]
-
-        new_data = list(schema.values())
-        if new_data:
+            new_docs.append(data)
+        schema = {
+            "guild_id": str(os.getenv("GUILD_ID", "")),
+            "restaurant": new_docs,
+        }
+        if new_docs:
             await db.delete_many({})
-            await db.insert_many(new_data)
-        else:
-            print("❌ Error: Transformation resulted in empty list. Aborting wipe.")
+            await db.insert_one(schema)
+
         print("✅ Done Migrations")
         
             
