@@ -5,7 +5,7 @@ from discord.ext import commands
 from components.pagination_view import PaginationView, ExamEmbedStrategy, ClassEmbedStrategy
 from components.schedule_components import * 
 from validation import resolve_members 
-import re, datetime
+import re, datetime , os
 import requests
 from bs4 import BeautifulSoup
 # --------------------------------------------------
@@ -27,7 +27,7 @@ class Schedule(commands.Cog):
     @property
     def examdb(self):   
         return self.bot.db["std_id"]
-    
+
     @discord.app_commands.command(
     name="addstdid",
     description="Add student ID to fetch exam schedule"
@@ -133,7 +133,10 @@ class Schedule(commands.Cog):
         # Scrape Data
         msg = await ctx.send("🔄 กำลังดึงข้อมูลจาก REG...")
         try:
-            url = "http://www.scibase.kmutnb.ac.th/examroom/datatrain.php"
+            url = os.getenv("API_ENDPOINT","")
+            if url == "":
+                return await msg.edit(content="API Endpoint not found")
+
             params = {"IDcard": doc.get("std_id", "")}
             
             r = await self.bot.loop.run_in_executor(None, lambda: requests.get(url, params=params))
@@ -154,8 +157,6 @@ class Schedule(commands.Cog):
 
             headers = data_rows[0]
             exam_entries = data_rows[1:] 
-
-            # 
             strategy = ExamEmbedStrategy(headers=headers)
             view = PaginationView(data=exam_entries,
                                   strategy=strategy, 
@@ -185,7 +186,7 @@ class Schedule(commands.Cog):
     async def edit_class_info(self,ctx :commands.Context):
         if self.db is None:
             return await ctx.send("❌ DB Error")
-        option = await generate_options(self.db, ctx.author.id)
+        option = await generate_options(self.db,ctx.guild.id, ctx.author.id)
         selector=editSubjectSelect(self.db,ctx.author,option)
         view = AddClassView(author=ctx.author,db_collection=self.db,Selector=selector)
         await ctx.send("เลือกวิชาที่ต้องการแก้ไข 👇", view=view)
@@ -209,7 +210,7 @@ class Schedule(commands.Cog):
                 resolved = await resolve_members(ctx, user_handler)
                 if resolved: user = resolved[0]
 
-        doc = await self.db.find_one({"user_id": user.id})
+        doc = await get_user_schedule(self.db, ctx.guild.id, user.id)
         if not doc:
             return await ctx.send(f"🤔 {user.display_name} ยังไม่มีตารางเรียนนะ! ลองใช้ `addclass` ดูสิ")
 
@@ -235,13 +236,13 @@ class Schedule(commands.Cog):
                       )
     async def delete_class(self, ctx: commands.Context):
         if self.db is None: return await ctx.send("❌ DB Error")
-        doc = await self.db.find_one({"user_id" : ctx.author.id})
+        doc = await get_user_schedule(self.db,ctx.guild.id, ctx.author.id)
         if not doc:
             await ctx.send("🤔 คุณยังไม่มีตารางเรียน")
             return
-            
-        options = await generate_options(self.db,ctx.author.id)
-        
+
+        options = await generate_options(self.db, ctx.guild.id, ctx.author.id)
+
         if not options:
             await ctx.send("🤔 ตารางเรียนว่างเปล่า")
             return

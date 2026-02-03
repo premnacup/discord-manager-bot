@@ -4,7 +4,6 @@ import validation
 from discord.ext import commands
 from dotenv import load_dotenv
 from motor.motor_asyncio import AsyncIOMotorClient
-from web_server import keep_alive
 load_dotenv()
 
 TOKEN = os.getenv("DISCORD_TOKEN")
@@ -69,10 +68,6 @@ class Core(commands.Cog):
             "Xd",
             "😂",
             "🤣",
-            "Hahaha!",
-            "That's funny!",
-            "LMAO!",
-            "ROFL!",
             "nga",
             "nigha",    
             "<:xdx:1438479283147243572>",
@@ -122,32 +117,39 @@ class BotInitDB(commands.Bot):
             return True
         return False
 
-    async def refactor_db(self,enabled=False):
+    async def refactor_db(self, enabled=False):
         if not enabled:
             return
-        
-        print("Starting Migration...")
-        db = self.db["restaurant_choices"]
-        cursor = db.find({})
-        data = await cursor.to_list(length=None)
-        doc = await db.find({}).to_list(length=None)
-        new_docs = []
-        for item in doc:
-            data = {
-                "restaurant" : item.get("restaurant",""),
-                "type" : item.get("type","sr"),
-            }
-            new_docs.append(data)
-        schema = {
-            "guild_id": str(os.getenv("GUILD_ID", "")),
-            "restaurant": new_docs,
-        }
-        if new_docs:
-            await db.delete_many({})
-            await db.insert_one(schema)
 
-        print("✅ Done Migrations")
-        
+        print("Starting Migration...")
+        db = self.db["schedules"]
+        docs = await db.find({}).to_list(length=None)
+
+        new_docs = []
+
+        for document in docs:
+            merged_doc = {
+                "user_id": document.get("user_id")
+            }
+
+            for key, value in document.items():
+                if key not in ["_id", "user_id"]:
+                    merged_doc[key] = value
+
+            # 👇 wrap into another array layer
+            new_docs.append([merged_doc])
+
+        schema = {
+            "guild_id": str(os.getenv("GUILD_ID")),
+            "schedules": new_docs
+        }
+
+        db = self.db["schedules"]
+        await db.insert_one(schema)
+        print("Migration Completed.")
+
+                
+
             
     async def setup_hook(self):
         print("Starting Setup Hook...")
@@ -189,8 +191,9 @@ class BotInitDB(commands.Bot):
 
 
 # ------------ run -----------
+from web_server import keep_alive
 
-keep_alive()
 Bot = BotInitDB()
+keep_alive()
 log_level_shift = logging.ERROR if bool(os.getenv("DEV")) == True else logging.DEBUG
 Bot.run(TOKEN, log_handler=handler, log_level=log_level_shift)

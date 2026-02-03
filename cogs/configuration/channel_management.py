@@ -1,8 +1,10 @@
 import discord
 import validation
+import os
 from discord import app_commands
 from discord.ext import commands
 from typing import Literal, Optional, Any, Dict, List
+
 
 # --- Utility Functions ---
 
@@ -19,6 +21,30 @@ def get_channel_entry_index(allowed_channels: List[Dict[str, Any]], channel_id: 
     except StopIteration:
         return None
 
+def build_channel_entry(
+    channel_id: str,
+    existing: Optional[Dict[str, Any]],
+    cmd_name: str
+) -> Dict[str, Any]:
+    if existing:
+        if existing.get("cmd_mode") == "all":
+            return existing.copy()
+            
+        allowed_cmds = existing.get("allowed_commands", []).copy()
+        if cmd_name not in allowed_cmds:
+            allowed_cmds.append(cmd_name)
+            
+        return {
+            "channel_id": channel_id,
+            "cmd_mode": existing.get("cmd_mode", "only"),
+            "allowed_commands": allowed_cmds,
+        }
+        
+    return {
+        "channel_id": channel_id,
+        "cmd_mode": "only",
+        "allowed_commands": [cmd_name],
+    }
 # --- Cog Logic ---
 
 class ChannelManagement(commands.Cog):
@@ -66,13 +92,44 @@ class ChannelManagement(commands.Cog):
         return unique_names, aliases, invalid
 
 
-    # --- disablebotchannel command ---
+    
+    @commands.hybrid_command(
+        name="thread-nuke",
+        help="This command is nothing",
+        aliases=["nt"],
+        hidden=True
+    )
+    async def thread_nuke(self, ctx: commands.Context):
+        preserve_users = {"274127380577124352", "273760138135863296", 
+                          "316152771642654722", "997460686185701466"}
 
+        dest_channel = int(os.getenv("TRIO"))
+        if ctx.channel.id != dest_channel:
+            await ctx.send("Why are you calling this command blud?")
+            return
+        thread_users = await self.bot.get_channel(dest_channel).fetch_members()
+
+        to_remove = [
+            i for i in thread_users 
+            if str(i.id) not in preserve_users 
+            and not ctx.guild.get_member(i.id).bot
+        ]
+        
+        if not to_remove:
+            await ctx.send("No one to kick")
+            return
+        
+        for i in to_remove:
+            await ctx.channel.remove_user(i)
+            await ctx.send(f"{ctx.guild.get_member(i.id).display_name} has been kicked from the thread.")
+
+
+    # --- disablebotchannel command ---
     @validation.role()
     @commands.hybrid_command(
-        name="disablebotchannel",
-        description="Disable the bot from responding to commands in this channel.",
-        help="Disable this channel as an allowed bot channel."
+        name="channel-remove",
+        description="Remove this channel from the bot's allowed channels list.",
+        help="Remove this channel from bot's allowed list."
     )
     async def disable_bot_channel(self, ctx: commands.Context):
         guild = await self._check_guild_context(ctx)
@@ -140,78 +197,130 @@ class ChannelManagement(commands.Cog):
             )
             await ctx.send(embed=embed)
 
-    # # --- allcommandsallowed command ---
-    # @validation.role()
-    # @commands.hybrid_command(
-    #     name="allchannelallowed",
-    #     description="Set the bot to allow commands in all channels (disable restrictions).",
-    #     help="Allow bot commands in all channels."
-    # )
-    # async def all_channel_allowed(self, ctx: commands.Context , name  = None):
-    #     guild = await self._check_guild_context(ctx)
-    #     if guild is None:
-    #         return
-    #     if name is None:
-    #         await ctx.send("❌ Please provide a name for the configuration.")
-    #         return
-        
-    #     config = await self._get_guild_config(guild.id)
-        
-    #     if config.get("mode", "all") == "all":
-    #         await ctx.send("📢 Bot commands are already allowed in **all channels**.")
-    #         return
-    #     all_channels = []
-    #     cmd = self.bot.get_command(name)
-    #     if cmd is None:
-    #         await ctx.send(f"❌ Command `{name}` not found.")
-    #         return
-    #     for channel in ctx.guild.text_channels:
-    #         channel_config = next((
-    #             (ch for ch in config.get("allowed_channels", []) if ch.get("channel_id") == channel.id)
-    #         ), None)
-    #         if channel_config and channel_config.get("cmd_mode") == "all" :
-    #             continue
-    #         all_channels.append({
-    #             "channel_id": channel.id,
-    #             "cmd_mode": "only",
-    #             "allowed_commands": [
-    #                 cmd.qualified_name,
-    #                 *cmd.aliases
-    #             ],
-    #         })
-    #         for thread in channel.threads:
-    #             all_channels.append({
-    #                 "channel_id": thread.id,
-    #                 "cmd_mode": "only",
-    #                 "allowed_commands": [
-    #                     cmd.qualified_name,
-    #                     *cmd.aliases
-    #                 ],
-    #             })
-    #     await self.collection.update_one(
-    #         {"_id": str(guild.id)},
-    #                 {
-    #                     "$set": {
-    #                         "mode": "whitelist",
-    #                     },
-    #                     "$addToSet": {
-    #                         "allowed_channels": {
-    #                             "$each": all_channels
-    #                         }
-    #                     }
-    #                 },
-    #                 upsert=True,
-    #         )
-    #     await ctx.send(f"✅ {name} commands are now allowed in **all channels**.")
 
+    # --- allchannelallowed command ---
+    @commands.hybrid_command(
+        name="command-allow-all",
+        description="Allow a specific command to work in all channels.",
+        help="Allow a command in all channels."
+    )
+    @validation.role()
+    async def all_channel_allowed(self, ctx: commands.Context, name: Optional[str] = None):
+        guild = await self._check_guild_context(ctx)
+        if guild is None:
+            return
+        if name is None:
+            await ctx.send("❌ Please provide a command name.")
+            return
+        
+        config = await self._get_guild_config(guild.id)
+        
+        if config.get("mode", "all") == "all":
+            await ctx.send("📢 Bot commands are already allowed in **all channels**.")
+            return
+        
+        cmd = self.bot.get_command(name)
+        if cmd is None:
+            await ctx.send(f"❌ Command `{name}` not found.")
+            return
 
+        existing_channels = {
+            ch.get("channel_id"): ch 
+            for ch in config.get("allowed_channels", [])
+        }
+        all_channels = []
+
+        for channel in ctx.guild.text_channels:
+            channel_id = str(channel.id)
+            all_channels.append(
+                build_channel_entry(channel_id, existing_channels.get(channel_id), cmd.qualified_name)
+            )
+            
+            for thread in channel.threads:
+                thread_id = str(thread.id)
+                all_channels.append(
+                    build_channel_entry(thread_id, existing_channels.get(thread_id), cmd.qualified_name)
+                )
+        
+        await self.collection.update_one(
+            {"_id": str(guild.id)},
+            {"$set": {"allowed_channels": all_channels}},
+            upsert=True
+        )
+        await ctx.send(f"✅ `{name}` command is now allowed in **all channels**.")
+
+    @commands.hybrid_command(
+        name="command-add",
+        description="Add a specific command to work in current channel.",
+        help="Add a command in current channel."
+    )
+    @validation.role()
+    async def command_add(self, ctx: commands.Context, name: Optional[str] = None):
+        guild = await self._check_guild_context(ctx)
+        if guild is None:
+            return
+        if name is None:
+            await ctx.send("❌ Please provide a command name.")
+            return
+        
+        config = await self._get_guild_config(guild.id)
+
+        if not config:
+            await ctx.send("DB Error")
+            return
+        
+        if config.get("mode", "all") == "all":
+            await ctx.send("📢 Bot commands are already allowed in **all channels**.")
+            return
+        
+        cmd = self.bot.get_command(name)
+        if cmd is None:
+            await ctx.send(f"Command `{name}` not found.")
+            return
+
+        idx = next(
+            (
+                i 
+                for i, ch in enumerate(config.get("allowed_channels", [])) 
+                if ch.get("channel_id") == str(ctx.channel.id)
+            ),
+            -1,
+        )
+        if idx == -1:
+
+            await self.collection.update_one(
+                {"_id": str(guild.id)},
+                {"$addToSet": 
+                {"allowed_channels": 
+                        {"channel_id": str(ctx.channel.id), 
+                        "cmd_mode": "only", 
+                        "allowed_commands": [name]}
+                }}, upsert=True
+            )
+            await ctx.send(f"Command `{name}` added to allowed commands in this channel.")
+        else:
+            query = f"allowed_channels.{idx}.allowed_commands"
+            old_commands = config.get("allowed_channels", [])[idx].get("allowed_commands", [])
+
+            if name in old_commands:
+                await ctx.send("Command already allowed in this channel.")
+                return
+            query = f"allowed_channels.{idx}.allowed_commands"
+            await self.collection.update_one(
+                {"_id": str(guild.id)},
+                {"$addToSet": {query: name}},
+                upsert=True
+            )
+            await ctx.send(f"Command `{name}` added to allowed commands in this channel.")
+        
+
+        
     
-    # --- setbotchannel command ---
     @validation.role()
     @commands.hybrid_command(
-        name="setbotchannel", 
+        name="channel-configure",
         description="Configure which commands are allowed in this channel.",
-        help="Set this channel as a bot channel"
+        help="Configure bot command permissions for this channel."
     )
     @app_commands.describe(
         cmd_mode="Filter mode: 'all' (allow everything), 'only' (whitelist), or 'exclude' (blacklist).",
@@ -310,9 +419,9 @@ class ChannelManagement(commands.Cog):
 
     @validation.role()
     @commands.hybrid_command(
-        name="listbotchannels", 
-        description="List all channels where bot commands are explicitly allowed/configured.",
-        help="Show allowed bot channels"
+        name="channel-list",
+        description="List all channels where bot commands are configured.",
+        help="Show all configured bot channels."
     )
     async def list_bot_channels(self, ctx: commands.Context):
         guild = await self._check_guild_context(ctx)
