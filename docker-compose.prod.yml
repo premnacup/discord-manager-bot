@@ -1,9 +1,7 @@
 services:
   # Discord Bot
   bot:
-    build:
-      context: ./main_bot
-      dockerfile: Dockerfile
+    image: kkhw/discord-manager-bot:bot
     container_name: discord-bot
     restart: unless-stopped
     env_file:
@@ -17,9 +15,7 @@ services:
 
   # Flask API Backend
   api:
-    build:
-      context: ./api
-      dockerfile: Dockerfile
+    image: kkhw/discord-manager-bot:api
     container_name: bot-api
     restart: unless-stopped
     ports:
@@ -33,9 +29,7 @@ services:
 
   # Next.js Dashboard
   dashboard:
-    build:
-      context: ./dashboard
-      dockerfile: Dockerfile
+    image: kkhw/discord-manager-bot:dashboard
     container_name: bot-dashboard
     restart: unless-stopped
     ports:
