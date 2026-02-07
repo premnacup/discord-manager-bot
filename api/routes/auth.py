@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from functools import wraps
 from flask import Blueprint, request, jsonify, redirect, current_app
 
+
 auth_bp = Blueprint('auth', __name__)
 
 DISCORD_API_URL = 'https://discord.com/api/v10'
@@ -28,11 +29,13 @@ def token_required(f):
     def decorated(*args, **kwargs):
         token = None
         
-        # Check Authorization header
+        print(f"Authorization header: {request.headers}")
         auth_header = request.headers.get('Authorization')
-        if auth_header and auth_header.startswith('Bearer '):
-            token = auth_header.split(' ')[1]
-        
+        if auth_header:
+            parts = auth_header.split()
+            if len(parts) == 2 and parts[0].lower() == 'bearer':
+                token = parts[1]
+
         # Check cookie fallback
         if not token:
             token = request.cookies.get('auth_token')
@@ -95,13 +98,14 @@ def callback():
         headers={'Content-Type': 'application/x-www-form-urlencoded'}
     )
     
+    print(f"token_response: {token_response.text}")
+
     if token_response.status_code != 200:
         return jsonify({'error': 'Failed to get access token'}), 400
     
     token_data = token_response.json()
     access_token = token_data['access_token']
     
-    # Get user info from Discord
     user_response = requests.get(
         f"{DISCORD_API_URL}/users/@me",
         headers={'Authorization': f"Bearer {access_token}"}
@@ -112,10 +116,8 @@ def callback():
     
     user_data = user_response.json()
     
-    # Create JWT token
     jwt_token = create_token(user_data)
-    
-    # Return token (frontend will handle storage)
+
     return jsonify({
         'token': jwt_token,
         'user': {
@@ -135,6 +137,7 @@ def me():
         'user_id': request.user['user_id'],
         'username': request.user['username'],
         'avatar': request.user['avatar']
+
     })
 
 
@@ -143,3 +146,16 @@ def me():
 def logout():
     """Logout user (client should delete token)"""
     return jsonify({'message': 'Logged out successfully'})
+
+@auth_bp.route('/authorized-user', methods=['GET'])
+@token_required
+def authorized_user():
+    collection = current_app.db['authorize_user']
+    user = collection.find_one(
+        {
+            'guild_id': os.getenv('GUILD_ID'),
+            'user_id': str(request.user['user_id'])
+        }
+    )
+    result = user is not None
+    return jsonify({'authorized': result})

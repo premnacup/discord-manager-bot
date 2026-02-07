@@ -1,13 +1,9 @@
 services:
   # Discord Bot
   bot:
-    build:
-      context: ./main_bot
-      dockerfile: Dockerfile
+    image: kkhw/discord-manager-bot:bot
     container_name: discord-bot
     restart: unless-stopped
-    ports:
-      - "8080:8080"
     env_file:
       - .env
     environment:
@@ -19,9 +15,7 @@ services:
 
   # Flask API Backend
   api:
-    build:
-      context: ./api
-      dockerfile: Dockerfile
+    image: kkhw/discord-manager-bot:api
     container_name: bot-api
     restart: unless-stopped
     ports:
@@ -30,22 +24,16 @@ services:
       - .env
     environment:
       - API_PORT=5000
-      - BOT_INTERNAL_URL=http://bot:8080
-      - FRONTEND_URL=http://dashboard:10000
     networks:
       - bot-network
-    volumes:
-      - ./api:/app
 
   # Next.js Dashboard
   dashboard:
-    build:
-      context: ./dashboard
-      dockerfile: Dockerfile
+    image: kkhw/discord-manager-bot:dashboard
     container_name: bot-dashboard
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "10000:10000"
     environment:
       - NEXT_PUBLIC_API_URL=http://api:5000
     depends_on:
