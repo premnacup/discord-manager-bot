@@ -2,10 +2,10 @@ import os
 from flask import Flask
 from flask_cors import CORS
 from dotenv import load_dotenv
-from motor.motor_asyncio import AsyncIOMotorClient
-
+from pymongo import MongoClient
 # Load environment variables
 load_dotenv()
+
 
 def create_app():
     app = Flask(__name__)
@@ -18,16 +18,17 @@ def create_app():
     # Discord OAuth2 config
     app.config['DISCORD_CLIENT_ID'] = os.getenv('DISCORD_CLIENT_ID')
     app.config['DISCORD_CLIENT_SECRET'] = os.getenv('DISCORD_CLIENT_SECRET')
-    app.config['OAUTH_REDIRECT_URI'] = os.getenv('OAUTH_REDIRECT_URI', 'http://localhost:3000/api/auth/callback')
+    app.config['OAUTH_REDIRECT_URI'] = os.getenv('OAUTH_REDIRECT_URI')
+    app.url_map.strict_slashes = False
+
     
-    # CORS - allow Next.js frontend
+
     CORS(app, origins=[
-        'http://localhost:3000',
-        os.getenv('FRONTEND_URL', 'http://localhost:3000')
+        os.getenv('FRONTEND_URL')
     ], supports_credentials=True)
     
     # MongoDB connection
-    mongo_client = AsyncIOMotorClient(
+    mongo_client = MongoClient(
         app.config['MONGO_URI'],
         serverSelectionTimeoutMS=5000,
         maxPoolSize=20
@@ -38,10 +39,12 @@ def create_app():
     from routes.auth import auth_bp
     from routes.stats import stats_bp
     from routes.commands import commands_bp
+    from routes.channel import channel_bp
     
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
     app.register_blueprint(stats_bp, url_prefix='/api/stats')
     app.register_blueprint(commands_bp, url_prefix='/api/commands')
+    app.register_blueprint(channel_bp, url_prefix='/api/channels')
     
     # Health check endpoint
     @app.route('/health')
@@ -58,6 +61,6 @@ def create_app():
 if __name__ == '__main__':
     from waitress import serve
     app = create_app()
-    port = int(os.getenv('API_PORT', 5000))
+    port = int(os.getenv('PORT', 5000))
     print(f"🚀 Flask API running on port {port}")
     serve(app, host='0.0.0.0', port=port)

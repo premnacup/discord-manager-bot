@@ -71,6 +71,7 @@ class Core(commands.Cog):
             "nga",
             "nigha",    
             "<:xdx:1438479283147243572>",
+            "<:unxdd:1468624889073373285>",
             "<:xdd:1438479267716534353>",
         ]
         await ctx.send(random.choice(responses))
@@ -122,31 +123,19 @@ class BotInitDB(commands.Bot):
             return
 
         print("Starting Migration...")
-        db = self.db["schedules"]
-        docs = await db.find({}).to_list(length=None)
-
-        new_docs = []
-
-        for document in docs:
-            merged_doc = {
-                "user_id": document.get("user_id")
-            }
-
-            for key, value in document.items():
-                if key not in ["_id", "user_id"]:
-                    merged_doc[key] = value
-
-            # 👇 wrap into another array layer
-            new_docs.append([merged_doc])
-
+        db = self.db["authorize_user"]
         schema = {
-            "guild_id": str(os.getenv("GUILD_ID")),
-            "schedules": new_docs
+            "guild_id" : str(os.getenv("GUILD_ID")),
+            "user_id" : ["273760138135863296","274127380577124352"]
         }
+        await db.update_one(
+            {"guild_id": schema["guild_id"]},
+            {"$set": schema},                 
+            upsert=True                   
+        )
+        print("✅ Migration completed")
+        
 
-        db = self.db["schedules"]
-        await db.insert_one(schema)
-        print("Migration Completed.")
 
                 
 
@@ -155,7 +144,7 @@ class BotInitDB(commands.Bot):
         print("Starting Setup Hook...")
         await self.mongo.pingdb()
         await self.add_cog(Core(self))
-        await self._load_all_extensions(["backup"]) 
+        await self._load_all_extensions() 
 
         if os.getenv("ENV") == "SINGLE_GUILD":
             target_guild = discord.Object(id=GUILD_ID)
@@ -191,9 +180,10 @@ class BotInitDB(commands.Bot):
 
 
 # ------------ run -----------
-from web_server import keep_alive
+from internal_api import keep_alive, set_bot
 
 Bot = BotInitDB()
+set_bot(Bot)
 keep_alive()
 log_level_shift = logging.ERROR if bool(os.getenv("DEV")) == True else logging.DEBUG
 Bot.run(TOKEN, log_handler=handler, log_level=log_level_shift)
